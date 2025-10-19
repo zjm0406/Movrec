@@ -199,25 +199,25 @@ def main():
 
     for sid in ids[:20]: 
         url = f"https://movie.douban.com/subject/{sid}/"
-    try:
-        soup = get_soup(sess, url)
-        info = parse_subject_page(soup)
-        info["subject_id"] = sid
-        info["url"] = url
+        try:
+            soup = get_soup(sess, url)
+            info = parse_subject_page(soup)
+            info["subject_id"] = sid
+            info["url"] = url
         
-        # === 新增：爬取短评 ===
-        print(f"  正在爬取短评...", end="")
-        reviews = parse_movie_reviews(soup, sid, sess, max_reviews=20)
-        info["reviews"] = " | ".join(reviews)  # 用竖线分隔多条短评
-        info["reviews_count"] = len(reviews)
-        print(f"获得 {len(reviews)} 条短评")
-        # === 短评爬取结束 ===
+             # === 新增：爬取短评 ===
+            print(f"  正在爬取短评...", end="")
+            reviews = parse_movie_reviews(soup, sid, sess, max_reviews=20)
+            info["reviews"] = " | ".join(reviews)  # 用竖线分隔多条短评
+            info["reviews_count"] = len(reviews)
+            print(f"获得 {len(reviews)} 条短评")
+            # === 短评爬取结束 ===
         
-        rows.append(info)
-        print(f"[OK] {sid} {info.get('title')} ({info.get('year')}) 评分:{info.get('rating')} 票数:{info.get('votes')}")
-    except Exception as e:
-        print(f"[WARN] 抓取失败 {sid}: {e}")
-    time.sleep(random.uniform(args.delay_min, args.delay_max)) 
+            rows.append(info)
+            print(f"[OK] {sid} {info.get('title')} ({info.get('year')}) 评分:{info.get('rating')} 票数:{info.get('votes')}")
+        except Exception as e:
+            print(f"[WARN] 抓取失败 {sid}: {e}")
+        time.sleep(random.uniform(args.delay_min, args.delay_max)) 
 
     with open(args.out, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=out_fields)
