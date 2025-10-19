@@ -82,7 +82,59 @@ def parse_subject_page(soup: BeautifulSoup) -> Dict[str, str]:
 
     countries = field(r"制片国家/地区:\s*([^\n]+)")
     aka = field(r"又名:\s*([^\n]+)")
-
+def parse_movie_reviews(soup: BeautifulSoup, movie_id: str, sess: requests.Session, max_reviews=30) -> List[str]:
+    """
+    爬取指定电影的短评
+    """
+    reviews_list = []
+    
+    try:
+        # 爬取前2页短评
+        for page in range(2):
+            if len(reviews_list) >= max_reviews:
+                break
+                
+            # 构造短评页面URL
+            review_url = f"https://movie.douban.com/subject/{movie_id}/comments"
+            params = {
+                'start': page * 20,
+                'limit': 20,
+                'status': 'P',
+                'sort': 'new_score'
+            }
+            
+            try:
+                review_soup = get_soup(sess, review_url)
+                
+                # 提取短评内容
+                comment_items = review_soup.find_all('div', class_='comment-item')
+                
+                for item in comment_items:
+                    if len(reviews_list) >= max_reviews:
+                        break
+                        
+                    # 提取短评文本
+                    comment = item.find('span', class_='short')
+                    if comment:
+                        review_text = comment.get_text().strip()
+                        # 过滤太短的评论和无关内容
+                        if (len(review_text) > 5 and 
+                            not review_text.startswith('未通过验证') and
+                            '账号异常' not in review_text):
+                            reviews_list.append(review_text)
+                
+                # 随机延时
+                time.sleep(random.uniform(1, 2))
+                
+            except Exception as e:
+                print(f"  短评第{page+1}页爬取失败: {e}")
+                continue
+                
+    except Exception as e:
+        print(f"爬取电影 {movie_id} 短评时出错: {e}")
+    
+    return reviews_list
+  
     return {
         "title": title,
         "year": year,
@@ -94,6 +146,7 @@ def parse_subject_page(soup: BeautifulSoup) -> Dict[str, str]:
         "countries": countries,
         "aka": aka,
     }
+
 
 def load_ids(args) -> List[str]:
     ids: List[str] = []
@@ -140,21 +193,30 @@ def main():
     if args.cookies:
         sess.cookies.update(parse_cookie_str(args.cookies))
 
-    out_fields = ["subject_id","title","year","rating","votes","directors","genres","durations","countries","aka","url"]
+    out_fields = ["subject_id","title","year","rating","votes","directors","genres","durations","countries","aka","url","reviews","reviews_count"]
     rows = []
 
     for sid in ids[:20]:  # 最多 20 部
-        url = f"https://movie.douban.com/subject/{sid}/"
-        try:
-            soup = get_soup(sess, url)
-            info = parse_subject_page(soup)
-            info["subject_id"] = sid
-            info["url"] = url
-            rows.append(info)
-            print(f"[OK] {sid} {info.get('title')} ({info.get('year')}) 评分:{info.get('rating')} 票数:{info.get('votes')}")
-        except Exception as e:
-            print(f"[WARN] 抓取失败 {sid}: {e}")
-        time.sleep(random.uniform(args.delay_min, args.delay_max))
+    url = f"https://movie.douban.com/subject/{sid}/"
+    try:
+        soup = get_soup(sess, url)
+        info = parse_subject_page(soup)
+        info["subject_id"] = sid
+        info["url"] = url
+        
+        # === 新增：爬取短评 ===
+        print(f"  正在爬取短评...", end="")
+        reviews = parse_movie_reviews(soup, sid, sess, max_reviews=20)
+        info["reviews"] = " | ".join(reviews)  # 用竖线分隔多条短评
+        info["reviews_count"] = len(reviews)
+        print(f"获得 {len(reviews)} 条短评")
+        # === 短评爬取结束 ===
+        
+        rows.append(info)
+        print(f"[OK] {sid} {info.get('title')} ({info.get('year')}) 评分:{info.get('rating')} 票数:{info.get('votes')}")
+    except Exception as e:
+        print(f"[WARN] 抓取失败 {sid}: {e}")
+    time.sleep(random.uniform(args.delay_min, args.delay_max))
 
     with open(args.out, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=out_fields)
