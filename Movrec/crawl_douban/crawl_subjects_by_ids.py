@@ -82,6 +82,19 @@ def parse_subject_page(soup: BeautifulSoup) -> Dict[str, str]:
 
     countries = field(r"制片国家/地区:\s*([^\n]+)")
     aka = field(r"又名:\s*([^\n]+)")
+
+    return {
+        "title": title,
+        "year": year,
+        "rating": rating,
+        "votes": votes,
+        "directors": directors,
+        "genres": genres,
+        "durations": durations,
+        "countries": countries,
+        "aka": aka,
+    }
+
 def parse_movie_reviews(soup: BeautifulSoup, movie_id: str, sess: requests.Session, max_reviews=30) -> List[str]:
     """
     爬取指定电影的短评
@@ -134,18 +147,6 @@ def parse_movie_reviews(soup: BeautifulSoup, movie_id: str, sess: requests.Sessi
         print(f"爬取电影 {movie_id} 短评时出错: {e}")
     
     return reviews_list
-  
-    return {
-        "title": title,
-        "year": year,
-        "rating": rating,
-        "votes": votes,
-        "directors": directors,
-        "genres": genres,
-        "durations": durations,
-        "countries": countries,
-        "aka": aka,
-    }
 
 
 def load_ids(args) -> List[str]:
@@ -196,8 +197,8 @@ def main():
     out_fields = ["subject_id","title","year","rating","votes","directors","genres","durations","countries","aka","url","reviews","reviews_count"]
     rows = []
 
-    for sid in ids[:20]:  # 最多 20 部
-    url = f"https://movie.douban.com/subject/{sid}/"
+    for sid in ids[:20]: 
+      url = f"https://movie.douban.com/subject/{sid}/"
     try:
         soup = get_soup(sess, url)
         info = parse_subject_page(soup)
@@ -216,7 +217,7 @@ def main():
         print(f"[OK] {sid} {info.get('title')} ({info.get('year')}) 评分:{info.get('rating')} 票数:{info.get('votes')}")
     except Exception as e:
         print(f"[WARN] 抓取失败 {sid}: {e}")
-    time.sleep(random.uniform(args.delay_min, args.delay_max))
+    time.sleep(random.uniform(args.delay_min, args.delay_max)) 
 
     with open(args.out, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=out_fields)
