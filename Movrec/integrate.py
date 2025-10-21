@@ -11,8 +11,8 @@ import jieba
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# 导入crawl_douban_me.py中的关键类和函数
-from crawl_douban_me import (
+# 导入crawl_douban_me2.py中的关键类和函数
+from crawl_douban_me2 import (
     DoubanClient, 
     crawl_collect,
     parse_cookie_str
@@ -64,4 +64,5 @@ def main():
     root.mainloop()
 
 if __name__ == "__main__":
+
     main()
