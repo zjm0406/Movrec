@@ -114,34 +114,9 @@ def parse_profile_summary(soup: BeautifulSoup) -> dict:
         # 简单启发式匹配，尽量别误伤
         if "movie" in href and any(k in txt for k in ["看过", "在看", "想看", "电影"]):
             counters.setdefault("movie", set()).add(txt)
-        if "book" in href and any(k in txt for k in ["读过", "在读", "想读", "读书"]):
-            counters.setdefault("book", set()).add(txt)
-        if "music" in href and any(k in txt for k in ["听过", "在听", "想听", "音乐"]):
-            counters.setdefault("music", set()).add(txt)
-        if "note" in href and "日记" in txt:
-            counters.setdefault("note", set()).add(txt)
-        if "status" in href and "广播" in txt:
-            counters.setdefault("status", set()).add(txt)
     out["counters_raw"] = {k: sorted(list(v)) for k, v in counters.items()}
 
     return out
-
-def parse_status_page(soup: BeautifulSoup) -> list[dict]:
-    """
-    广播页面：/people/<uid>/statuses?p=
-    提取时间、正文、链接
-    """
-    items = []
-    for it in soup.select(".status-item, .new-status, .status-wrapper"):
-        # 时间
-        ts = text_or_none(it.select_one(".created_at, .pubtime, .timestamp"))
-        # 正文
-        content = text_or_none(it.select_one(".status-content, .bd, .content, .text"))
-        # 链接
-        link_el = it.select_one("a[href*='/status/']")
-        link = link_el.get("href") if link_el else None
-        items.append({"time": ts, "text": content, "link": link})
-    return items
 
 def parse_collect_grid(soup: BeautifulSoup) -> list[dict]:
     """
@@ -171,52 +146,22 @@ def crawl_profile(client: DoubanClient, profile_url: str) -> dict:
     out["uid"] = m.group(1) if m else None
     return out
 
-def crawl_statuses(client: DoubanClient, uid: str, pages: int = 2, delay=(1.2, 2.5)) -> list[dict]:
-    all_rows = []
-    for p in range(1, pages + 1):
-        url = f"https://www.douban.com/people/{uid}/statuses"
-        soup = client.soup(url + "?" + urlencode({"p": p}))
-        rows = parse_status_page(soup)
-        all_rows.extend(rows)
-        time.sleep(random.uniform(*delay))
-    return all_rows
-
-def crawl_collect(client: DoubanClient, uid: str, cat: str = "movie", interest: str = "collect",
-                  pages: int = 2, delay=(1.2, 2.5)) -> list[dict]:
+def crawl_collect(client: DoubanClient, uid: str, pages: int = 2, delay=(1.2, 2.5)) -> list[dict]:
     """
-    cat: movie/book/music
-    interest: wish(想看/想读/想听), do(在看/在读/在听), collect(看过/读过/听过)
-    关键点：不同 cat 要去对应子域名，而不是 douban.com 主站
+    只爬取用户想看的电影
     """
     all_rows = []
-
-    # 选择子域名
-    domain = {
-        "movie": "https://movie.douban.com",
-        "book":  "https://book.douban.com",
-        "music": "https://music.douban.com",
-    }.get(cat, "https://www.douban.com")
-
-    # 路径：/people/<uid>/(wish|do|collect)
-    path = {"wish": "wish", "do": "do", "collect": "collect"}.get(interest, "collect")
-    base_url = f"{domain}/people/{uid}/{path}"
+    domain = "https://movie.douban.com"
+    base_url = f"{domain}/people/{uid}/wish"
 
     for p in range(pages):
-        # 子域名的分页用 ?start=0,15,30...；部分页面支持 mode/grid，但不是必须
         params = {"start": p * 15, "sort": "time"}
         try:
             soup = client.soup(base_url, params=params)
             rows = parse_collect_grid(soup)
             all_rows.extend(rows)
         except Exception as e:
-            # 兜底：如果子域名异常，再尝试主站（旧式 URL）
-            try:
-                fallback_params = {"cat": cat, "sort": "time", "start": p * 15, "mode": "grid"}
-                soup = client.soup(f"https://www.douban.com/people/{uid}/{path}", params=fallback_params)
-                rows = parse_collect_grid(soup)
-                all_rows.extend(rows)
-            except Exception:
-                print(f"[WARN] {cat}/{interest} 第 {p+1} 页抓取失败：{e}")
+            print(f"[WARN] movie/wish 第 {p+1} 页抓取失败：{e}")
         time.sleep(random.uniform(*delay))
     return all_rows
 
