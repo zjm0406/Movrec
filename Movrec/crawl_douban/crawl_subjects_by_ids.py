@@ -23,8 +23,6 @@ import io
 # 修改标准输出流编码为 UTF-8
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-# 处理文件时也要使用 utf-8-sig 编码来避免 BOM 问题
-
 MOBILE_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -95,59 +93,59 @@ def parse_subject_page(soup: BeautifulSoup) -> Dict[str, str]:
         "aka": aka,
     }
 
-def parse_movie_reviews(soup: BeautifulSoup, movie_id: str, sess: requests.Session, max_reviews=30) -> List[str]:
+def parse_movie_reviews(soup: BeautifulSoup, movie_id: str, sess: requests.Session, max_reviews=5) -> List[str]:
     """
     爬取指定电影的短评
+    现在默认最多保留 5 条（修改点①：默认值从 30 改为 5）
     """
     reviews_list = []
-    
     try:
-        # 爬取前2页短评
-        for page in range(2):
+        # 只爬第一页即可（修改点②：range(2) -> range(1)）
+        for page in range(1):
             if len(reviews_list) >= max_reviews:
                 break
-                
-            # 构造短评页面URL
+
             review_url = f"https://movie.douban.com/subject/{movie_id}/comments"
+            # 这里留着参数以便将来扩展翻页
             params = {
                 'start': page * 20,
                 'limit': 20,
                 'status': 'P',
                 'sort': 'new_score'
             }
-            
+
             try:
+                # 简化用法：复用 get_soup 获取第一页
                 review_soup = get_soup(sess, review_url)
-                
+
                 # 提取短评内容
                 comment_items = review_soup.find_all('div', class_='comment-item')
-                
+
                 for item in comment_items:
                     if len(reviews_list) >= max_reviews:
                         break
-                        
-                    # 提取短评文本
+
                     comment = item.find('span', class_='short')
                     if comment:
                         review_text = comment.get_text().strip()
-                        # 过滤太短的评论和无关内容
-                        if (len(review_text) > 5 and 
+                        # 过滤太短或无效内容
+                        if (len(review_text) > 5 and
                             not review_text.startswith('未通过验证') and
                             '账号异常' not in review_text):
                             reviews_list.append(review_text)
-                
-                # 随机延时
+
+                # 随机延时，尽量温和
                 time.sleep(random.uniform(1, 2))
-                
+
             except Exception as e:
                 print(f"  短评第{page+1}页爬取失败: {e}")
                 continue
-                
+
     except Exception as e:
         print(f"爬取电影 {movie_id} 短评时出错: {e}")
-    
-    return reviews_list
 
+    # 最终只保留最多 max_reviews 条
+    return reviews_list[:max_reviews]
 
 def load_ids(args) -> List[str]:
     ids: List[str] = []
@@ -197,27 +195,26 @@ def main():
     out_fields = ["subject_id","title","year","rating","votes","directors","genres","durations","countries","aka","url","reviews","reviews_count"]
     rows = []
 
-    for sid in ids[:20]: 
+    for sid in ids[:20]:
         url = f"https://movie.douban.com/subject/{sid}/"
         try:
             soup = get_soup(sess, url)
             info = parse_subject_page(soup)
             info["subject_id"] = sid
             info["url"] = url
-        
-             # === 新增：爬取短评 ===
+
+            # === 短评：最多 5 条 ===
             print(f"  正在爬取短评...", end="")
-            reviews = parse_movie_reviews(soup, sid, sess, max_reviews=20)
-            info["reviews"] = " | ".join(reviews)  # 用竖线分隔多条短评
+            reviews = parse_movie_reviews(soup, sid, sess, max_reviews=5)  # 修改点③：明确传入 5
+            info["reviews"] = " | ".join(reviews)
             info["reviews_count"] = len(reviews)
             print(f"获得 {len(reviews)} 条短评")
-            # === 短评爬取结束 ===
-        
+
             rows.append(info)
             print(f"[OK] {sid} {info.get('title')} ({info.get('year')}) 评分:{info.get('rating')} 票数:{info.get('votes')}")
         except Exception as e:
             print(f"[WARN] 抓取失败 {sid}: {e}")
-        time.sleep(random.uniform(args.delay_min, args.delay_max)) 
+        time.sleep(random.uniform(args.delay_min, args.delay_max))
 
     with open(args.out, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=out_fields)
