@@ -72,6 +72,89 @@ def safe_int(s):
     except Exception:
         return None
 
+def parse_movie_details(client: DoubanClient, movie_url: str) -> dict:
+    """抓取电影详细信息：导演、简介、短评"""
+    try:
+        soup = client.soup(movie_url)
+        details = {}
+        
+        # 提取导演信息
+        director_els = soup.select('a[rel="v:directedBy"]')
+        directors = " / ".join([el.get_text(strip=True) for el in director_els]) if director_els else ""
+        details["director"] = directors
+        
+        # 提取电影简介
+        summary_el = soup.select_one('span[property="v:summary"]')
+        summary = text_or_none(summary_el)
+        if summary:
+            # 清理简介文本，去除多余空格和换行
+            summary = re.sub(r'\s+', ' ', summary).strip()
+        details["summary"] = summary
+        
+        # 提取短评（20条）
+        reviews = parse_movie_reviews(client, movie_url, max_reviews=20)
+        details["reviews"] = " | ".join(reviews)
+        
+        return details
+    except Exception as e:
+        print(f"[WARN] 抓取电影详情失败 {movie_url}: {e}")
+        return {"director": "", "summary": "", "reviews": ""}
+
+def parse_movie_reviews(client: DoubanClient, movie_url: str, max_reviews=20) -> list[str]:
+    """
+    抓取电影短评
+    """
+    reviews_list = []
+    try:
+        # 从电影URL构造短评URL
+        movie_id = re.search(r'/subject/(\d+)/', movie_url)
+        if not movie_id:
+            return reviews_list
+            
+        movie_id = movie_id.group(1)
+        review_url = f"https://movie.douban.com/subject/{movie_id}/comments"
+        
+        # 抓取前2页获取20条短评
+        for page in range(2):
+            if len(reviews_list) >= max_reviews:
+                break
+                
+            params = {
+                'start': page * 20,
+                'limit': 20,
+                'status': 'P',
+                'sort': 'new_score'
+            }
+            
+            try:
+                review_soup = client.soup(review_url, params=params)
+                comment_items = review_soup.find_all('div', class_='comment-item')
+                
+                for item in comment_items:
+                    if len(reviews_list) >= max_reviews:
+                        break
+                        
+                    comment = item.find('span', class_='short')
+                    if comment:
+                        review_text = comment.get_text().strip()
+                        # 过滤太短的评论和无关内容
+                        if (len(review_text) > 5 and 
+                            not review_text.startswith('未通过验证') and
+                            '账号异常' not in review_text):
+                            reviews_list.append(review_text)
+                
+                time.sleep(random.uniform(1, 2))
+                
+            except Exception as e:
+                print(f"  短评第{page+1}页抓取失败: {e}")
+                continue
+                
+    except Exception as e:
+        print(f"抓取电影短评时出错: {e}")
+    
+    return reviews_list
+
+
 # =============== 解析器们（可能因页面改版需要微调）================
 
 def parse_profile_summary(soup: BeautifulSoup) -> dict:
@@ -146,24 +229,56 @@ def crawl_profile(client: DoubanClient, profile_url: str) -> dict:
     out["uid"] = m.group(1) if m else None
     return out
 
-def crawl_collect(client: DoubanClient, uid: str, pages: int = 2, delay=(1.2, 2.5)) -> list[dict]:
-    """
-    只爬取用户想看的电影
-    """
+def crawl_collect(client: DoubanClient, uid: str, pages: int = 2, delay=(1.2, 2.5), cat="movie", interest="wish") -> list[dict]:
+    """只爬取用户想看的电影"""
     all_rows = []
-    domain = "https://movie.douban.com"
-    base_url = f"{domain}/people/{uid}/wish"
-
+    domain = "https://movie.douban.com" if cat == "movie" else "https://book.douban.com"
+    base_url = f"{domain}/people/{uid}/{interest}"
+    
     for p in range(pages):
         params = {"start": p * 15, "sort": "time"}
         try:
             soup = client.soup(base_url, params=params)
             rows = parse_collect_grid(soup)
+
+            for row in rows:
+                if row.get("link"):
+                    print(f"  抓取详细信息：{row['title']}")
+                    details = parse_movie_details(client, row["link"])
+                    row.update(details)
+                    time.sleep(random.uniform(1, 3))
+
             all_rows.extend(rows)
+            print(f"[OK]第{p+1}/{pages}页完成。本页{len(rows)}部电影")  # 修复：应该是len(rows)
+
         except Exception as e:
-            print(f"[WARN] movie/wish 第 {p+1} 页抓取失败：{e}")
+            print(f"[WARN] {cat}/{interest} 第 {p+1} 页抓取失败：{e}")
         time.sleep(random.uniform(*delay))
     return all_rows
+
+def crawl_statuses(client: DoubanClient, uid: str, pages: int = 2) -> list[dict]:
+    """抓取用户广播"""
+    statuses = []
+    base_url = f"https://www.douban.com/people/{uid}/statuses"
+    
+    for p in range(pages):
+        try:
+            params = {"p": p + 1}
+            soup = client.soup(base_url, params=params)
+            # 简单的广播解析逻辑，可根据需要完善
+            status_items = soup.select('.status-item')
+            for item in status_items:
+                content = text_or_none(item.select_one('.status-content'))
+                time_el = item.select_one('.created-at')
+                status_time = time_el.get_text(strip=True) if time_el else None
+                if content:
+                    statuses.append({"content": content, "time": status_time})
+            print(f"[OK] 广播第{p+1}/{pages}页完成")
+            time.sleep(random.uniform(1, 2))
+        except Exception as e:
+            print(f"[WARN] 广播第{p+1}页抓取失败：{e}")
+    
+    return statuses
 
 def main():
     ap = argparse.ArgumentParser()
@@ -171,6 +286,7 @@ def main():
     ap.add_argument("--cookies", default=None, help="浏览器复制的cookie整串（建议）")
     ap.add_argument("--pages", type=int, default=2, help="分页数量（广播/标记各抓多少页）")
     ap.add_argument("--out_prefix", default="douban_me", help="输出文件前缀")
+    ap.add_argument("--enhance_movies", action="store_true", help="是否增强抓取电影详细信息（导演、简介、短评）")
     args = ap.parse_args()
 
     client = DoubanClient(cookies=args.cookies)
