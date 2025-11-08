@@ -1,0 +1,144 @@
+<!-- templates/movie_detail.html -->
+{% extends "base.html" %}
+
+{% block title %}{{ movie.NAME or "电影详情" }}{% endblock %}
+
+{% block content %}
+<div class="movie-detail">
+    <h1>{{ movie.NAME }} {% if movie.YEAR %}({{ movie.YEAR }}){% endif %}</h1>
+
+    {% if movie.COVER %} {# 假设 CSV 中有海报链接字段 #}
+        <img src="{{ movie.COVER }}" alt="{{ movie.NAME }} Poster" style="max-width: 200px; float: left; margin-right: 20px;">
+    {% endif %}
+
+    <p><strong>导演:</strong> {{ movie.DIRECTOR or "未知" }}</p>
+    <p><strong>主演:</strong> {{ movie.CAST or "未知" }}</p>
+    <p><strong>类型:</strong> {{ movie.GENRES or "未知" }}</p>
+    <p><strong>评分:</strong> {{ "%.1f"|format(movie.RATING) if movie.RATING else "暂无评分" }}</p>
+    <p><strong>简介:</strong></p>
+    <p>{{ movie.PLOT_SUMMARY or movie.DESCRIPTION or "暂无简介" }}</p> {# 假设有摘要或描述字段 #}
+
+    <div style="clear: both;"></div> <!-- 清除浮动 -->
+
+    <!-- 偏好按钮区 -->
+    {% if current_user.is_authenticated %}
+    <div>
+        <p><strong>你的评价:</strong></p>
+        
+        <!-- 喜欢按钮 -->
+        <button id="like-btn" class="pref-btn" data-action="like"
+                style="{% if user_has_liked %}background-color: green; color: white;{% endif %}">
+            {% if user_has_liked %}✓ 已喜欢{% else %}👍 喜欢{% endif %}
+        </button>
+
+        <!-- 不喜欢按钮 -->
+        <button id="dislike-btn" class="pref-btn" data-action="dislike"
+                style="{% if user_has_disliked %}background-color: red; color: white;{% endif %}">
+            {% if user_has_disliked %}✗ 已不喜欢{% else %}👎 不喜欢{% endif %}
+        </button>
+
+        <!-- 移除偏好按钮 (可选，通过再次点击相同按钮实现) -->
+        <!-- 本实现中，再次点击“喜欢”会变成“取消喜欢”，“不喜欢”同理 -->
+
+    </div>
+    {% else %}
+        <p><a href="{{ url_for('login') }}">登录</a> 后可以评价这部电影。</p>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const buttons = document.querySelectorAll('.pref-btn');
+    // 使用注释包裹 Jinja2 表达式，避免 VSCode JS Linter 报错
+    // @ts-ignore
+    const movieId = /*{{ movie.MOVIE_ID | tojson }}*/ "{{ movie.MOVIE_ID }}"; // 从 Jinja2 模板获取电影 ID
+    // @ts-ignore
+    const csrfToken = /*{{ csrf_token() | tojson }}*/ "{{ csrf_token() }}"; // 获取 CSRF token
+
+    buttons.forEach(button => {
+        button.addEventListener('click', async function () {
+            const action = this.dataset.action;
+
+            // 简单的加载指示器
+            const originalText = this.textContent;
+            this.textContent = '...';
+            this.disabled = true;
+
+            try {
+                // @ts-ignore
+                const response = await fetch(/*{{ url_for("toggle_preference_optimized") | tojson }}*/ '{{ url_for("toggle_preference_optimized") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken // 发送 CSRF token
+                    },
+                    body: JSON.stringify({ movie_douban_id: movieId, action: action })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // 根据返回的新状态更新按钮UI
+                    updateButtonUI(data.new_status);
+                } else {
+                    alert('操作失败: ' + (data.error || '未知错误'));
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('网络或服务器错误，请稍后再试。');
+            } finally {
+                // 恢复按钮状态
+                this.textContent = originalText;
+                this.disabled = false;
+            }
+        });
+    });
+
+    function updateButtonUI(newStatus) {
+        const likeBtn = document.getElementById('like-btn');
+        const dislikeBtn = document.getElementById('dislike-btn');
+
+        // 重置按钮样式和文本
+        likeBtn.style.backgroundColor = '';
+        likeBtn.style.color = '';
+        likeBtn.textContent = '👍 喜欢';
+        dislikeBtn.style.backgroundColor = '';
+        dislikeBtn.style.color = '';
+        dislikeBtn.textContent = '👎 不喜欢';
+
+        if (newStatus === 'liked') {
+            likeBtn.style.backgroundColor = 'green';
+            likeBtn.style.color = 'white';
+            likeBtn.textContent = '✓ 已喜欢';
+        } else if (newStatus === 'disliked') {
+            dislikeBtn.style.backgroundColor = 'red';
+            dislikeBtn.style.color = 'white';
+            dislikeBtn.textContent = '✗ 已不喜欢';
+        }
+        // 如果 newStatus 是 'none'，则保持重置后的默认状态（已取消）
+    }
+});
+</script>
+
+<style>
+    .pref-btn {
+        padding: 8px 16px;
+        margin-right: 10px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    .pref-btn:hover:not(:disabled) {
+        opacity: 0.8;
+    }
+    .pref-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+</style>
+{% endblock %}

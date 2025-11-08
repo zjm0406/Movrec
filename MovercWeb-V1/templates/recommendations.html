@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}电影推荐{% endblock %}
+
+{% block content %}
+<h1>电影推荐</h1>
+
+<form method="post">
+    <div class="input-group mb-3">
+        <input type="text" class="form-control" placeholder="输入你想找类似推荐的电影名..." name="movie_query" value="{{ query }}" required>
+        <div class="input-group-append">
+            <button class="btn btn-outline-secondary" type="submit">搜索</button>
+        </div>
+    </div>
+</form>
+
+{% if recommendations is not none %}
+    {% if recommendations.empty %}
+        <p>抱歉，没有找到相关推荐。</p>
+    {% else %}
+        <h3>为您推荐:</h3>
+        <div class="row">
+        {% for index, row in recommendations.iterrows() %}
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title">{{ row['电影名'] }}</h5>
+                        <p class="card-text"><strong>评分:</strong> {{ row['豆瓣评分'] }}</p>
+                        <p class="card-text"><strong>流派:</strong> {{ row['流派'] or '未知' }}</p>
+                        <p class="card-text"><strong>导演:</strong> {{ row['导演'] or '未知' }}</p>
+                        <p class="card-text"><small class="text-muted">相似度: {{ "%.3f"|format(row['相似度']) }}</small></p>
+                        <!-- 可在此处添加“喜欢”、“不喜欢”按钮，并绑定 JavaScript 调用 /api/toggle_preference -->
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    {% endif %}
+{% endif %}
+
+{% endblock %}

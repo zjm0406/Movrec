@@ -1,0 +1,12 @@
+# requirements.txt
+Flask==2.3.2
+Flask-SQLAlchemy==3.0.5
+Flask-Login==0.6.3
+Werkzeug==2.3.7
+pandas>=1.5.0
+numpy>=1.21.0
+jieba>=0.42.1
+scikit-learn>=1.2.0
+tensorflow>=2.12.0 # 或者 torch 如果使用 PyTorch
+email_validator
+Flask-WTF

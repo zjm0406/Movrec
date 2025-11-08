@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}我的资料{% endblock %}
+
+{% block content %}
+<h1>{{ current_user.username }} 的资料</h1>
+
+<h3>我喜欢的电影</h3>
+{% if liked_movies %}
+<ul class="list-group mb-4">
+    {% for movie in liked_movies %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+        {{ movie.NAME }} ({{ movie.DOUBAN_SCORE }})
+        <!-- 可添加移除按钮 -->
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>暂无喜欢的电影。</p>
+{% endif %}
+
+<h3>我不喜欢的电影</h3>
+{% if disliked_movies %}
+<ul class="list-group">
+    {% for movie in disliked_movies %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+        {{ movie.NAME }} ({{ movie.DOUBAN_SCORE }})
+        <!-- 可添加移除按钮 -->
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>暂无不喜欢的电影。</p>
+{% endif %}
+{% endblock %}
