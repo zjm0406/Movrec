@@ -1,29 +1,31 @@
 {% extends 'base.html' %}
-{% block title %}演员检索{% endblock %}
 {% block content %}
-<h2>演员检索</h2>
-<form method="get">
-  <div class="input-group mb-3">
-    <input type="text" class="form-control" name="query" value="{{ query or '' }}" placeholder="输入演员姓名">
-    <button class="btn btn-outline-secondary" type="submit">搜索</button>
-  </div>
-</form>
-
-{% if result %}
-  <h3>直接匹配演员词条</h3>
-  {% if result.direct %}
-    <ul>
-      {% for actor in result.direct %}
-        <li><a href="{{ url_for('actor_detail', name=actor) }}">{{ actor }}</a></li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p>无直接匹配演员。</p>
+<div class="container mt-4">
+  <h2>演员检索</h2>
+  <form method="get" action="{{ url_for('search_actor') }}">
+    <div class="form-group">
+      <input type="text" name="q" class="form-control" placeholder="请输入演员名关键词" value="{{ query }}">
+    </div>
+    <button type="submit" class="btn btn-primary">搜索</button>
+  </form>
+  {% if result %}
+    <hr>
+    <h4>直接匹配演员词条</h4>
+    {% if result.direct %}
+      <ul>
+        {% for actor in result.direct %}
+          <li><a href="{{ url_for('actor_detail', actor_name=actor) }}">{{ actor }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>无直接匹配演员。</p>
+    {% endif %}
+    <h4>模糊匹配推荐</h4>
+    {% if result.fuzzy %}
+      <p>最相似演员：<a href="{{ url_for('actor_detail', actor_name=result.fuzzy) }}">{{ result.fuzzy }}</a></p>
+    {% else %}
+      <p>无相似演员推荐。</p>
+    {% endif %}
   {% endif %}
-
-  {% if result.fuzzy %}
-    <h3>模糊匹配推荐</h3>
-    <p>最相似演员：<a href="{{ url_for('actor_detail', name=result.fuzzy) }}">{{ result.fuzzy }}</a></p>
-  {% endif %}
-{% endif %}
+</div>
 {% endblock %}

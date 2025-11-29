@@ -1,59 +1,398 @@
 {% extends "base.html" %}
-{% block title %}电影推荐{% endblock %}
-{% block content %}
-<h2>电影推荐</h2>
 
-<form method="get" class="mb-4">
-  <div class="input-group">
-    <input type="text" class="form-control" name="query" value="{{ query or '' }}" placeholder="输入电影名称">
-    <button class="btn btn-primary" type="submit">搜索</button>
-  </div>
+{% block title %}Welcome to MovRec{% endblock %}
+
+{% block content %}
+<h1>Welcome to MovRec</h1>
+
+<!-- 权重控制面板 -->
+<div class="card mb-4" style="background-color: #f8f9fa;">
+        <div class="card-header">
+            <h5 class="mb-0">⚙️ ItemCF-DAVE混合推荐算法权重调整</h5>
+        </div>
+    <div class="card-body">
+        <div class="text-center mb-3">
+            <label for="dvae-slider" class="form-label w-100" style="font-size:1.2rem;font-weight:500;">
+                DVAE 内容相似度权重: <span id="dvae-value">60</span>%
+            </label>
+            <small class="text-muted d-block mb-2">基于电影内容、剧情、标签的相似度</small>
+            <small class="text-muted d-block">ItemCF（基于用户共现/协同过滤）：根据其他用户的喜好共现关系推荐，适用于有较丰富用户交互数据时提升个性化效果。</small>
+            <input type="range" class="form-range w-50 mx-auto" id="dvae-slider" min="0" max="100" value="60">
+            <div class="mt-3 text-center">
+                <button class="btn btn-primary btn-sm px-4" id="save-weights-btn">💾 保存配置</button>
+            </div>
+        </div>
+        <div id="weights-message" class="mt-2"></div>
+    </div>
+</div>
+<!-- 全局说明：将推荐反馈按钮的作用统一放在搜索框上方，避免在每条推荐中重复显示 -->
+<div class="card mb-3">
+    <div class="card-body small bg-light">
+        <strong>关于推荐反馈按钮（说明）</strong>
+        <ul class="mb-0 mt-1" style="padding-left:1rem">
+            <li><strong>✓ 有用 (helpful)：</strong> 表示该推荐对您非常相关。系统会把此反馈记录为正样本，用于调整个性化推荐——短期内提升相似项排序，长期用于离线再训练或模型微调。</li>
+            <li><strong>~ 一般 (not_helpful)：</strong> 表示该推荐有一定参考价值但不够贴切。系统会将其视为中性或弱负样本，适度降低类似项目的优先级。</li>
+            <li><strong>✗ 无用 (dislike)：</strong> 表示该推荐完全不相关或令人反感。系统会把它视为强负样本，显著降低今后出现相似推荐的概率，并用于负样本计算。</li>
+        </ul>
+        <div class="mt-1">
+            <em>补充：</em> 提交反馈后相关按钮会显示“已记录”并可撤销（点击“撤销”会从后端删除最近一次该条目的反馈并恢复按钮状态）。
+        </div>
+        <div class="mt-1">
+            <em>与“喜欢/不喜欢”按钮的区别：</em> “喜欢/不喜欢”是对个人偏好的直接标记，通常立即影响用户偏好档案与推荐排序；而上方三按钮是对推荐结果质量的评价，主要用于提升模型的推荐质量与训练数据。
+        </div>
+    </div>
+</div>
+
+
+<form method="post">
+    <div class="input-group mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <select class="form-select" name="search_type" style="max-width:140px">
+            <option value="movie_name" {% if search_type=='movie_name' or not search_type %}selected{% endif %}>电影名称</option>
+            <option value="director" {% if search_type=='director' %}selected{% endif %}>导演</option>
+            <!-- actor option removed -->
+            <option value="douban_id" {% if search_type=='douban_id' %}selected{% endif %}>豆瓣ID</option>
+        </select>
+        <input type="text" class="form-control" placeholder="请输入搜索内容..." name="movie_query" value="{{ query }}" required>
+        <div class="input-group-append">
+            <button class="btn btn-outline-secondary" type="submit">搜索</button>
+        </div>
+    </div>
 </form>
 
 {% if guess_query %}
-  <div class="alert alert-info">猜你想搜：{{ guess_query }}</div>
+<div class="mb-2 text-center text-muted">
+    猜你想搜：<strong>{{ guess_query }}</strong>
+</div>
 {% endif %}
 
 {% if recommendations is not none %}
-  {% if engine_status == "initializing" %}
-    <div class="alert alert-warning">推荐引擎正在初始化，这可能需要 30-60 秒（首次运行）。请稍候...</div>
-  {% elif recommendations.empty %}
-    <div class="alert alert-info">抱歉，没有找到相关推荐。请尝试其他电影名。</div>
-  {% else %}
-    <h3>为您推荐:</h3>
-    <table class="table table-striped">
-      <thead>
-        <tr>
-          <th>电影名称</th>
-          <th>导演</th>
-          <th>豆瓣ID</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for rec in recommendations.to_dict(orient='records') %}
-          {% set mid = rec.get('MOVIE_ID') or '' %}
-          <tr>
-            <td>
-              {% if mid %}
-                <a href="{{ url_for('movie_detail', movie_id=mid) }}">{{ rec['电影名'] }}</a>
-              {% else %}
-                {{ rec['电影名'] }}
-              {% endif %}
-            </td>
-            <td>{{ rec.get('导演', '未知') }}</td>
-            <td>{{ mid }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% if engine_status == "initializing" %}
+        <div class="alert alert-warning" role="alert">
+            推荐引擎正在初始化，这可能需要 30-60 秒（首次运行）。请稍候...
+        </div>
+    {% elif recommendations.empty %}
+        <p>抱歉，没有找到相关推荐。请尝试其他电影名。</p>
+    {% else %}
+        <h3>为您推荐:</h3>
+        <div class="row">
+        {% for rec in recommendations %}
+            {% set mid = rec.get('MOVIE_ID') or '' %}
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card h-100">
+                    <div style="width:100%; height:300px; background:#f5f7f9; display:flex; align-items:center; justify-content:center;">
+                        <img src="{{ poster_url(rec) }}" class="card-img-top" alt="{{ rec['NAME'] }} Poster" style="max-width:100%; max-height:100%; object-fit:contain;">
+                    </div>
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title">
+                            {% if mid %}
+                                    <a href="https://movie.douban.com/subject/{{ mid }}/" target="_blank" rel="noopener">{{ rec['NAME'] }}</a>
+                                {% else %}
+                                    {{ rec['NAME'] }}
+                                {% endif %}
+                        </h5>
+                        <p class="card-text"><strong>评分:</strong> {{ rec['DOUBAN_SCORE'] }}</p>
+                        <p class="card-text"><strong>流派:</strong> {{ rec.get('LABEL') or '未知' }}</p>
+                        <p class="card-text"><strong>导演:</strong> {{ rec.get('DIRECTORS') or '未知' }}</p>
+                        {# 相似度已移除 #}
 
-    <div class="alert alert-info">
-      <strong>补充：</strong>
-      <ul>
-        <li>提交反馈后相关按钮会显示“已记录”并可撤销（点击“撤销”会从后端删除最近一次该条目的反馈并恢复按钮状态）。</li>
-        <li>与“喜欢/不喜欢”按钮的区别：“喜欢/不喜欢”是对个人偏好的直接标记，通常立即影响用户偏好档案与推荐排序；而上方三按钮是对推荐结果质量的评价，主要用于提升模型的推荐质量与训练数据。</li>
-      </ul>
-    </div>
-  {% endif %}
+                        <div class="mt-auto">
+                            <!-- 喜欢/不喜欢按钮 -->
+                            <div class="btn-group mb-2 w-100" role="group">
+                                <button type="button" class="btn btn-sm btn-outline-success btn-like" data-movie-id="{{ mid }}" data-action="like">👍 喜欢</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger btn-dislike" data-movie-id="{{ mid }}" data-action="dislike">👎 不喜欢</button>
+                            </div>
+
+                            <!-- 推荐反馈按钮 -->
+                            <div class="btn-group w-100" role="group" style="font-size: 0.75rem;">
+                                <button type="button" class="btn btn-sm btn-outline-info feedback-btn" data-movie-id="{{ mid }}" data-feedback="helpful" title="这个推荐很相关">✓ 有用</button>
+                                <button type="button" class="btn btn-sm btn-outline-warning feedback-btn" data-movie-id="{{ mid }}" data-feedback="not_helpful" title="推荐还可以但不够好">~ 一般</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger feedback-btn" data-movie-id="{{ mid }}" data-feedback="dislike" title="推荐完全不相关">✗ 无用</button>
+                            </div>
+        
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+
+        <script>
+        const csrfToken = "{{ csrf_token() }}";
+        
+        // ========== 权重控制 ==========
+        const dvaeSlider = document.getElementById('dvae-slider');
+        const dvaeValue = document.getElementById('dvae-value');
+        const saveWeightsBtn = document.getElementById('save-weights-btn');
+        const weightsMessage = document.getElementById('weights-message');
+
+        // 加载已保存的用户权重
+        async function loadUserWeights() {
+            try {
+                const res = await fetch('{{ url_for("get_user_weights") }}', {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        const dvae = Math.round(data.dvae_weight * 100);
+                        dvaeSlider.value = dvae;
+                        updateWeightDisplay();
+                    }
+                }
+            } catch (err) {
+                console.error('加载权重失败:', err);
+            }
+        }
+
+        function updateWeightDisplay() {
+            dvaeValue.textContent = dvaeSlider.value;
+        }
+
+        dvaeSlider.addEventListener('input', updateWeightDisplay);
+
+        saveWeightsBtn.addEventListener('click', async function() {
+            const dvae = parseInt(dvaeSlider.value) / 100;
+            // Only send dvae weight; backend will compute itemcf = 1 - dvae
+            
+            try {
+                const res = await fetch('{{ url_for("set_user_weights") }}', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({
+                        dvae_weight: dvae
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    weightsMessage.innerHTML = '<div class="alert alert-success mb-0">✓ ' + data.message + '</div>';
+                    setTimeout(() => {
+                        weightsMessage.innerHTML = '';
+                    }, 3000);
+                } else {
+                    weightsMessage.innerHTML = '<div class="alert alert-danger mb-0">✗ 保存失败: ' + (data.error || '未知错误') + '</div>';
+                }
+            } catch (err) {
+                console.error(err);
+                weightsMessage.innerHTML = '<div class="alert alert-danger mb-0">✗ 网络错误</div>';
+            }
+        });
+
+        // ========== 推荐反馈 ==========
+        document.querySelectorAll('.feedback-btn').forEach(btn => {
+            btn.addEventListener('click', async function(e) {
+                e.preventDefault();
+                const movieId = this.dataset.movieId;
+                const feedback = this.dataset.feedback;
+                const queryMovie = "{{ query }}";
+                if (!movieId) {
+                    alert('此条目没有可用的豆瓣 ID');
+                    return;
+                }
+
+                const origText = this.innerHTML;
+                const btnEl = this;
+                btnEl.disabled = true;
+                btnEl.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+                try {
+                    const res = await fetch('{{ url_for("submit_recommendation_feedback") }}', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken
+                        },
+                        body: JSON.stringify({
+                            query_movie_id: queryMovie,
+                            recommended_movie_id: movieId,
+                            feedback: feedback,
+                            recommendation_method: 'hybrid'
+                        })
+                    });
+
+                    const data = await res.json();
+                    if (data.success) {
+                        // 标记为已记录并禁止再次点击；显示撤销按钮
+                        btnEl.classList.add('feedback-recorded');
+                        btnEl.innerHTML = '✓ 已记录';
+                        btnEl.disabled = true;
+
+                        // 创建撤销按钮（如果尚未存在）
+                        let undoBtn = btnEl.parentElement.querySelector('.undo-feedback');
+                        if (!undoBtn) {
+                            undoBtn = document.createElement('button');
+                            undoBtn.type = 'button';
+                            undoBtn.className = 'btn btn-sm btn-link undo-feedback';
+                            undoBtn.style.marginLeft = '6px';
+                            undoBtn.textContent = '撤销';
+                            btnEl.parentElement.appendChild(undoBtn);
+
+                            undoBtn.addEventListener('click', async function(ev) {
+                                ev.preventDefault();
+                                undoBtn.disabled = true;
+                                try {
+                                    const undoRes = await fetch('{{ url_for("undo_recommendation_feedback") }}', {
+                                        method: 'POST',
+                                        credentials: 'same-origin',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'X-CSRFToken': csrfToken
+                                        },
+                                        body: JSON.stringify({
+                                            recommended_movie_id: movieId,
+                                            query_movie_id: queryMovie
+                                        })
+                                    });
+                                    const undoData = await undoRes.json();
+                                    if (undoData.success) {
+                                        // 恢复按钮初始状态并移除撤销按钮
+                                        btnEl.classList.remove('feedback-recorded');
+                                        btnEl.disabled = false;
+                                        btnEl.innerHTML = origText;
+                                        undoBtn.remove();
+                                    } else {
+                                        alert(undoData.message || '撤销失败');
+                                        undoBtn.disabled = false;
+                                    }
+                                } catch (ue) {
+                                    console.error(ue);
+                                    alert('网络错误，撤销失败');
+                                    undoBtn.disabled = false;
+                                }
+                            });
+                        }
+                    } else {
+                        alert('反馈提交失败');
+                        btnEl.disabled = false;
+                        btnEl.innerHTML = origText;
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('网络错误');
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = origText;
+                }
+            });
+        });
+
+        // ========== 喜欢/不喜欢功能 ==========
+        document.addEventListener('DOMContentLoaded', function(){
+            loadUserWeights();
+            
+            document.querySelectorAll('.btn-like, .btn-dislike').forEach(btn => {
+                btn.addEventListener('click', async function(e){
+                    const movieId = this.dataset.movieId;
+                    const action = this.dataset.action;
+                    const btnEl = this;
+
+                    if(!movieId){
+                        alert('此条目没有可用的豆瓣 ID');
+                        return;
+                    }
+
+                    const origText = btnEl.innerHTML;
+                    btnEl.disabled = true;
+                    btnEl.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+                    // small message area inside the card (create if missing)
+                    const cardBody = btnEl.closest('.card-body');
+                    let prefMsg = cardBody.querySelector('.pref-message');
+                    if(!prefMsg){
+                        prefMsg = document.createElement('div');
+                        prefMsg.className = 'pref-message mt-2';
+                        cardBody.appendChild(prefMsg);
+                    }
+                    prefMsg.innerHTML = '';
+                    let successFlag = false;
+                    try{
+                        const res = await fetch('{{ url_for("toggle_preference_optimized") }}', {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                'Content-Type':'application/json',
+                                'X-CSRFToken': csrfToken
+                            },
+                            body: JSON.stringify({movie_douban_id: movieId, action: action})
+                        });
+
+                        const contentType = res.headers.get('content-type') || '';
+                        if(!res.ok){
+                            if(contentType.indexOf('application/json') !== -1){
+                                const errData = await res.json();
+                                alert(errData.error || '操作失败');
+                            } else {
+                                alert('操作失败，HTTP ' + res.status);
+                            }
+                            return;
+                        }
+
+                        if(contentType.indexOf('application/json') === -1){
+                            const txt = await res.text();
+                            const lowered = txt.toLowerCase();
+                            if(lowered.includes('login')){
+                                if(confirm('需要登录，是否前往登录页？')){
+                                    window.location.href = '{{ url_for("login") }}';
+                                }
+                                return;
+                            }
+                            alert('操作失败（非 JSON 响应）');
+                            return;
+                        }
+
+                        const data = await res.json();
+                        if(data && data.success){
+                            const parent = btnEl.closest('.card-body');
+                            const likeBtn = parent.querySelector('.btn-like');
+                            const dislikeBtn = parent.querySelector('.btn-dislike');
+                            likeBtn.classList.remove('btn-success');
+                            dislikeBtn.classList.remove('btn-danger');
+                            if(data.new_status === 'liked'){
+                                likeBtn.classList.add('btn-success');
+                                likeBtn.innerText = '✓ 已喜欢';
+                                dislikeBtn.innerText = '👎 不喜欢';
+                            } else if(data.new_status === 'disliked'){
+                                dislikeBtn.classList.add('btn-danger');
+                                dislikeBtn.innerText = '✗ 已不喜欢';
+                                likeBtn.innerText = '👍 喜欢';
+                            } else {
+                                likeBtn.innerText = '👍 喜欢';
+                                dislikeBtn.innerText = '👎 不喜欢';
+                            }
+                            // show short success hint
+                            if(prefMsg) prefMsg.innerHTML = '<div class="alert alert-success py-1">已更新偏好</div>';
+                            successFlag = true;
+                        } else if(data && data.error){
+                            if(prefMsg) prefMsg.innerHTML = '<div class="alert alert-danger py-1">' + (data.error||'操作失败') + '</div>';
+                        } else {
+                            if(prefMsg) prefMsg.innerHTML = '<div class="alert alert-danger py-1">操作失败（未知响应）</div>';
+                        }
+                    } catch(err){
+                        console.error(err);
+                        if(prefMsg) prefMsg.innerHTML = '<div class="alert alert-danger py-1">网络错误</div>';
+                    } finally{
+                        // 只在失败时恢复原始文本；成功时保留更新的按钮文案
+                        if(!successFlag){
+                            btnEl.disabled = false;
+                            btnEl.innerHTML = origText;
+                        } else {
+                            btnEl.disabled = false;
+                        }
+                        // 自动清理提示
+                        if(prefMsg){
+                            setTimeout(()=>{ prefMsg.innerHTML = ''; }, 2000);
+                        }
+                    }
+                });
+            });
+        });
+        </script>
+    {% endif %}
 {% endif %}
+
 {% endblock %}
