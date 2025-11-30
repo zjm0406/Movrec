@@ -1470,4 +1470,4 @@ def health_check():
 if __name__ == '__main__':
     # 确保 instance 文件夹存在
     os.makedirs(os.path.join(app.root_path, 'instance'), exist_ok=True)
-    app.run(debug=True) # 生产环境请设置 debug=False
+    app.run(host='0.0.0.0', port=5000, debug=True) # 生产环境请设置 debug=False
